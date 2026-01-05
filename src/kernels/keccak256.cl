@@ -15,46 +15,45 @@
 */
 
 /**
-* Based on the following, with small tweaks and optimizations:
-*
-* https://github.com/lwYeo/SoliditySHA3Miner/blob/master/SoliditySHA3Miner/
-*   Miner/Kernels/OpenCL/sha3KingKernel.cl
-*
-* Originally modified for openCL processing by lwYeo
-*
-* Original implementor: David Leon Gil
-*
-* License: CC0, attribution kindly requested. Blame taken too, but not
-* liability.
-*/
+ * Based on the following, with small tweaks and optimizations:
+ *
+ * https://github.com/lwYeo/SoliditySHA3Miner/blob/master/SoliditySHA3Miner/
+ *   Miner/Kernels/OpenCL/sha3KingKernel.cl
+ *
+ * Originally modified for openCL processing by lwYeo
+ *
+ * Original implementor: David Leon Gil
+ *
+ * License: CC0, attribution kindly requested. Blame taken too, but not
+ * liability.
+ */
 
 /******** Keccak-f[1600] (for finding efficient Ethereum addresses) ********/
 
 #define OPENCL_PLATFORM_UNKNOWN 0
-#define OPENCL_PLATFORM_AMD   2
+#define OPENCL_PLATFORM_AMD 2
 
 #ifndef PLATFORM
-# define PLATFORM       OPENCL_PLATFORM_UNKNOWN
+#define PLATFORM OPENCL_PLATFORM_UNKNOWN
 #endif
 
 #if PLATFORM == OPENCL_PLATFORM_AMD
-# pragma OPENCL EXTENSION   cl_amd_media_ops : enable
+#pragma OPENCL EXTENSION cl_amd_media_ops : enable
 #endif
 
-typedef union _nonce_t
-{
-  ulong   uint64_t;
-  uint    uint32_t[2];
-  uchar   uint8_t[8];
+typedef union _nonce_t {
+  ulong uint64_t;
+  uint uint32_t[2];
+  uchar uint8_t[8];
 } nonce_t;
 
 #if PLATFORM == OPENCL_PLATFORM_AMD
-static inline ulong rol(const ulong x, const uint s)
-{
+static inline ulong rol(const ulong x, const uint s) {
   uint2 output;
   uint2 x2 = as_uint2(x);
 
-  output = (s > 32u) ? amd_bitalign((x2).yx, (x2).xy, 64u - s) : amd_bitalign((x2).xy, (x2).yx, 32u - s);
+  output = (s > 32u) ? amd_bitalign((x2).yx, (x2).xy, 64u - s)
+                     : amd_bitalign((x2).xy, (x2).yx, 32u - s);
   return as_ulong(output);
 }
 #else
@@ -63,73 +62,87 @@ static inline ulong rol(const ulong x, const uint s)
 
 #define rol1(x) rol(x, 1u)
 
-#define theta_(m, n, o) \
-t = b[m] ^ rol1(b[n]); \
-a[o + 0] ^= t; \
-a[o + 5] ^= t; \
-a[o + 10] ^= t; \
-a[o + 15] ^= t; \
-a[o + 20] ^= t; \
+#define theta_(m, n, o)                                                        \
+  t = b[m] ^ rol1(b[n]);                                                       \
+  a[o + 0] ^= t;                                                               \
+  a[o + 5] ^= t;                                                               \
+  a[o + 10] ^= t;                                                              \
+  a[o + 15] ^= t;                                                              \
+  a[o + 20] ^= t;
 
-#define theta() \
-b[0] = a[0] ^ a[5] ^ a[10] ^ a[15] ^ a[20]; \
-b[1] = a[1] ^ a[6] ^ a[11] ^ a[16] ^ a[21]; \
-b[2] = a[2] ^ a[7] ^ a[12] ^ a[17] ^ a[22]; \
-b[3] = a[3] ^ a[8] ^ a[13] ^ a[18] ^ a[23]; \
-b[4] = a[4] ^ a[9] ^ a[14] ^ a[19] ^ a[24]; \
-theta_(4, 1, 0); \
-theta_(0, 2, 1); \
-theta_(1, 3, 2); \
-theta_(2, 4, 3); \
-theta_(3, 0, 4);
+#define theta()                                                                \
+  b[0] = a[0] ^ a[5] ^ a[10] ^ a[15] ^ a[20];                                  \
+  b[1] = a[1] ^ a[6] ^ a[11] ^ a[16] ^ a[21];                                  \
+  b[2] = a[2] ^ a[7] ^ a[12] ^ a[17] ^ a[22];                                  \
+  b[3] = a[3] ^ a[8] ^ a[13] ^ a[18] ^ a[23];                                  \
+  b[4] = a[4] ^ a[9] ^ a[14] ^ a[19] ^ a[24];                                  \
+  theta_(4, 1, 0);                                                             \
+  theta_(0, 2, 1);                                                             \
+  theta_(1, 3, 2);                                                             \
+  theta_(2, 4, 3);                                                             \
+  theta_(3, 0, 4);
 
-#define rhoPi_(m, n) t = b[0]; b[0] = a[m]; a[m] = rol(t, n); \
+#define rhoPi_(m, n)                                                           \
+  t = b[0];                                                                    \
+  b[0] = a[m];                                                                 \
+  a[m] = rol(t, n);
 
-#define rhoPi() t = a[1]; b[0] = a[10]; a[10] = rol1(t); \
-rhoPi_(7, 3); \
-rhoPi_(11, 6); \
-rhoPi_(17, 10); \
-rhoPi_(18, 15); \
-rhoPi_(3, 21); \
-rhoPi_(5, 28); \
-rhoPi_(16, 36); \
-rhoPi_(8, 45); \
-rhoPi_(21, 55); \
-rhoPi_(24, 2); \
-rhoPi_(4, 14); \
-rhoPi_(15, 27); \
-rhoPi_(23, 41); \
-rhoPi_(19, 56); \
-rhoPi_(13, 8); \
-rhoPi_(12, 25); \
-rhoPi_(2, 43); \
-rhoPi_(20, 62); \
-rhoPi_(14, 18); \
-rhoPi_(22, 39); \
-rhoPi_(9, 61); \
-rhoPi_(6, 20); \
-rhoPi_(1, 44);
+#define rhoPi()                                                                \
+  t = a[1];                                                                    \
+  b[0] = a[10];                                                                \
+  a[10] = rol1(t);                                                             \
+  rhoPi_(7, 3);                                                                \
+  rhoPi_(11, 6);                                                               \
+  rhoPi_(17, 10);                                                              \
+  rhoPi_(18, 15);                                                              \
+  rhoPi_(3, 21);                                                               \
+  rhoPi_(5, 28);                                                               \
+  rhoPi_(16, 36);                                                              \
+  rhoPi_(8, 45);                                                               \
+  rhoPi_(21, 55);                                                              \
+  rhoPi_(24, 2);                                                               \
+  rhoPi_(4, 14);                                                               \
+  rhoPi_(15, 27);                                                              \
+  rhoPi_(23, 41);                                                              \
+  rhoPi_(19, 56);                                                              \
+  rhoPi_(13, 8);                                                               \
+  rhoPi_(12, 25);                                                              \
+  rhoPi_(2, 43);                                                               \
+  rhoPi_(20, 62);                                                              \
+  rhoPi_(14, 18);                                                              \
+  rhoPi_(22, 39);                                                              \
+  rhoPi_(9, 61);                                                               \
+  rhoPi_(6, 20);                                                               \
+  rhoPi_(1, 44);
 
-#define chi_(n) \
-b[0] = a[n + 0]; \
-b[1] = a[n + 1]; \
-b[2] = a[n + 2]; \
-b[3] = a[n + 3]; \
-b[4] = a[n + 4]; \
-a[n + 0] = b[0] ^ ((~b[1]) & b[2]); \
-a[n + 1] = b[1] ^ ((~b[2]) & b[3]); \
-a[n + 2] = b[2] ^ ((~b[3]) & b[4]); \
-a[n + 3] = b[3] ^ ((~b[4]) & b[0]); \
-a[n + 4] = b[4] ^ ((~b[0]) & b[1]);
+#define chi_(n)                                                                \
+  b[0] = a[n + 0];                                                             \
+  b[1] = a[n + 1];                                                             \
+  b[2] = a[n + 2];                                                             \
+  b[3] = a[n + 3];                                                             \
+  b[4] = a[n + 4];                                                             \
+  a[n + 0] = b[0] ^ ((~b[1]) & b[2]);                                          \
+  a[n + 1] = b[1] ^ ((~b[2]) & b[3]);                                          \
+  a[n + 2] = b[2] ^ ((~b[3]) & b[4]);                                          \
+  a[n + 3] = b[3] ^ ((~b[4]) & b[0]);                                          \
+  a[n + 4] = b[4] ^ ((~b[0]) & b[1]);
 
-#define chi() chi_(0); chi_(5); chi_(10); chi_(15); chi_(20);
+#define chi()                                                                  \
+  chi_(0);                                                                     \
+  chi_(5);                                                                     \
+  chi_(10);                                                                    \
+  chi_(15);                                                                    \
+  chi_(20);
 
 #define iota(x) a[0] ^= x;
 
-#define iteration(x) theta(); rhoPi(); chi(); iota(x);
+#define iteration(x)                                                           \
+  theta();                                                                     \
+  rhoPi();                                                                     \
+  chi();                                                                       \
+  iota(x);
 
-static inline void keccakf(ulong *a)
-{
+static inline void keccakf(ulong *a) {
   ulong b[5];
   ulong t;
 
@@ -188,50 +201,22 @@ static inline void keccakf(ulong *a)
 #undef o
 }
 
-#define hasTotal(d) ( \
-  (!(d[0])) + (!(d[1])) + (!(d[2])) + (!(d[3])) + \
-  (!(d[4])) + (!(d[5])) + (!(d[6])) + (!(d[7])) + \
-  (!(d[8])) + (!(d[9])) + (!(d[10])) + (!(d[11])) + \
-  (!(d[12])) + (!(d[13])) + (!(d[14])) + (!(d[15])) + \
-  (!(d[16])) + (!(d[17])) + (!(d[18])) + (!(d[19])) \
->= TOTAL_ZEROES)
+#define hasTotal(d)                                                            \
+  ((!(d[0])) + (!(d[1])) + (!(d[2])) + (!(d[3])) + (!(d[4])) + (!(d[5])) +     \
+       (!(d[6])) + (!(d[7])) + (!(d[8])) + (!(d[9])) + (!(d[10])) +            \
+       (!(d[11])) + (!(d[12])) + (!(d[13])) + (!(d[14])) + (!(d[15])) +        \
+       (!(d[16])) + (!(d[17])) + (!(d[18])) + (!(d[19])) >=                    \
+   TOTAL_ZEROES)
 
-#if LEADING_ZEROES == 8
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1]))
-#elif LEADING_ZEROES == 7
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x00ffffffu))
-#elif LEADING_ZEROES == 6
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x0000ffffu))
-#elif LEADING_ZEROES == 5
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x000000ffu))
-#elif LEADING_ZEROES == 4
-#define hasLeading(d) (!(((uint*)d)[0]))
-#elif LEADING_ZEROES == 3
-#define hasLeading(d) (!(((uint*)d)[0] & 0x00ffffffu))
-#elif LEADING_ZEROES == 2
-#define hasLeading(d) (!(((uint*)d)[0] & 0x0000ffffu))
-#elif LEADING_ZEROES == 1
-#define hasLeading(d) (!(((uint*)d)[0] & 0x000000ffu))
-#else
-static inline bool hasLeading(uchar const *d)
-{
-#pragma unroll
-  for (uint i = 0; i < LEADING_ZEROES; ++i) {
-    if (d[i] != 0) return false;
-  }
-  return true;
-}
-#endif
+// hasLeading(d) is generated by Rust in mk_kernel_src
 
-__kernel void hashMessage(
-  __constant uchar const *d_message,
-  __constant uint const *d_nonce,
-  __global volatile ulong *restrict solutions
-) {
+__kernel void hashMessage(__constant uchar const *d_message,
+                          __constant uint const *d_nonce,
+                          __global volatile ulong *restrict solutions) {
 
   ulong spongeBuffer[25];
 
-#define sponge ((uchar *) spongeBuffer)
+#define sponge ((uchar *)spongeBuffer)
 #define digest (sponge + 12)
 
   nonce_t nonce;
@@ -351,14 +336,8 @@ __kernel void hashMessage(
   // Apply keccakf
   keccakf(spongeBuffer);
 
-  // determine if the address meets the constraints
-  if (
-    hasLeading(digest) 
-#if TOTAL_ZEROES <= 20
-    || hasTotal(digest)
-#endif
-  ) {
-    // To be honest, if we are using OpenCL, 
+  if (hasLeading(digest) && hasTotal(digest)) {
+    // To be honest, if we are using OpenCL,
     // we just need to write one solution for all practical purposes,
     // since the chance of multiple solutions appearing
     // in a single workset is extremely low.

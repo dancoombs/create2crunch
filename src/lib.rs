@@ -1,7 +1,7 @@
 #![warn(unused_crate_dependencies, unreachable_pub)]
 #![deny(unused_must_use, rust_2018_idioms)]
 
-use alloy_primitives::{hex, Address, FixedBytes};
+use alloy_primitives::{hex, Address, Bytes, FixedBytes};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use console::Term;
 use fs4::FileExt;
@@ -21,7 +21,7 @@ mod reward;
 pub use reward::Reward;
 
 // workset size (tweak this!)
-const WORK_SIZE: u32 = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
+const WORK_SIZE: u32 = 0x8000000; // max. 0x15400000 to abs. max 0xffffffff
 
 const WORK_FACTOR: u128 = (WORK_SIZE as u128) / 1_000_000;
 const CONTROL_CHARACTER: u8 = 0xff;
@@ -43,7 +43,7 @@ pub struct Config {
     pub calling_address: [u8; 20],
     pub init_code_hash: [u8; 32],
     pub gpu_device: u8,
-    pub leading_zeroes_threshold: u8,
+    pub leading_match_bytes: Bytes,
     pub total_zeroes_threshold: u8,
 }
 
@@ -67,9 +67,9 @@ impl Config {
             Some(arg) => arg,
             None => String::from("255"), // indicates that CPU will be used.
         };
-        let leading_zeroes_threshold_string = match args.next() {
+        let leading_match_bytes_string = match args.next() {
             Some(arg) => arg,
-            None => String::from("3"),
+            None => String::from(""),
         };
         let total_zeroes_threshold_string = match args.next() {
             Some(arg) => arg,
@@ -102,16 +102,13 @@ impl Config {
         let Ok(gpu_device) = gpu_device_string.parse::<u8>() else {
             return Err("invalid gpu device value");
         };
-        let Ok(leading_zeroes_threshold) = leading_zeroes_threshold_string.parse::<u8>() else {
-            return Err("invalid leading zeroes threshold value supplied");
-        };
+        let leading_match_bytes: Bytes = hex::decode(&leading_match_bytes_string)
+            .map_err(|_| "invalid leading match bytes hex string")?
+            .into();
         let Ok(total_zeroes_threshold) = total_zeroes_threshold_string.parse::<u8>() else {
             return Err("invalid total zeroes threshold value supplied");
         };
 
-        if leading_zeroes_threshold > 20 {
-            return Err("invalid value for leading zeroes threshold argument. (valid: 0..=20)");
-        }
         if total_zeroes_threshold > 20 && total_zeroes_threshold != 255 {
             return Err("invalid value for total zeroes threshold argument. (valid: 0..=20 | 255)");
         }
@@ -121,7 +118,7 @@ impl Config {
             calling_address,
             init_code_hash,
             gpu_device,
-            leading_zeroes_threshold,
+            leading_match_bytes,
             total_zeroes_threshold,
         })
     }
@@ -425,10 +422,10 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                 // display information about the current search criteria
                 term.write_line(&format!(
                     "current search space: {}xxxxxxxx{:08x}\t\t\
-                     threshold: {} leading or {} total zeroes",
+                     match bytes: {} and total zeroes: {}",
                     hex::encode(salt),
                     BigEndian::read_u64(&view_buf),
-                    config.leading_zeroes_threshold,
+                    hex::encode(&config.leading_match_bytes),
                     config.total_zeroes_threshold
                 ))?;
 
@@ -565,8 +562,20 @@ fn mk_kernel_src(config: &Config) -> String {
     for (i, x) in factory.chain(caller).enumerate().chain(hash) {
         writeln!(src, "#define S_{} {}u", i + 1, x).unwrap();
     }
-    let lz = config.leading_zeroes_threshold;
-    writeln!(src, "#define LEADING_ZEROES {lz}").unwrap();
+
+    // Generate hasLeading macro as a single expression
+    if config.leading_match_bytes.is_empty() {
+        writeln!(src, "#define hasLeading(d) true").unwrap();
+    } else {
+        let conditions: Vec<String> = config
+            .leading_match_bytes
+            .iter()
+            .enumerate()
+            .map(|(i, x)| format!("(d[{}] == {}u)", i, x))
+            .collect();
+        writeln!(src, "#define hasLeading(d) ({})", conditions.join(" && ")).unwrap();
+    }
+
     let tz = config.total_zeroes_threshold;
     writeln!(src, "#define TOTAL_ZEROES {tz}").unwrap();
 
